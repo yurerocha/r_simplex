@@ -1,5 +1,6 @@
 import numpy as np
 import utils as u
+import re
 
 # ---------------------------------------------------------------------------- #
 # Class:
@@ -10,10 +11,70 @@ class Model:
         self.b = np.array([], dtype=int)
         self.m = 0 # Number of constraints.
         self.n = 0 # Number of variables.
+        self.symbols = np.array([], dtype=str)
+        self.Bv = np.array([], dtype=int)
 
     def __str__(self):
-        a = f'Model \nx = [1..{self.n}]\nc = {self.c}'
-        return a + f'\nA = \n{self.A}\nb = {self.b}\nEnd Model\n'
+        a = f'Model \nx = [1..{self.n}]\nc = {self.c}\nA = \n{self.A}\n'
+        b = f'b = {self.b}\nm = {self.m}\nn = {self.n}\n'
+        c = f'symbols = {self.symbols}\nBv = \n{self.Bv}\nEnd Model\n'
+        return a + b + c
+    
+    def populate_c(self, obj:str):
+        # Substitute 'cxj' for ''.
+        obj = re.sub(r'x\d+', '', obj)
+        # Extract all cost coefficients.
+        obj = re.findall(r'\d+', obj)
+        for c in obj:
+            self.c = np.append(self.c, int(c))
+
+        self.n = len(obj)
+    
+    def populateAb(self, constrs):
+        self.m = len(constrs)
+        self.A = np.empty(shape=(self.m, self.n), dtype=int)
+        for i, c in enumerate(constrs):
+            # Rm unnecessary blank spaces.
+            c = c.replace(' ', '')
+            c = c.replace('\n', '')
+            # Get the first and only element returned in the list.
+            [symb] = re.findall(r'<=|>=|=', c)
+            self.symbols = np.append(self.symbols, symb)
+
+            cx, b = c.split(symb)
+            self.b = np.append(self.b, int(b))
+
+            cx = cx.split('+')
+            # Populate A.
+            for cxj in cx:
+                x, j = u.get_coef_and_x(cxj)
+                self.A[i, j] = x
+    
+    def read2(self, filename):
+        file = open(filename, 'r')
+        lines = file.readlines()
+
+        self.populate_c(lines[1])
+        self.populateAb(lines[u.__nb_header__:len(lines)-u.__nb_footer__])
+        self.to_standard()
+
+    def to_standard(self):
+        """Puts the problem in the stantard form, while populating the base, if
+        possible.
+        """
+        for i, s in enumerate(self.symbols):
+            c = 0
+            if '<=' in s:
+                c = 1
+                # Create initial base.
+                self.Bv = np.append(self.Bv, self.n)
+            elif '>=' in s:
+                c = -1
+            if c:
+                v = np.full(shape=(self.m, 1), fill_value=0)
+                v[i] = c
+                self.A = np.hstack((self.A, v))
+                self.n += 1
 
     def read(self, filename):
         file = open(filename, 'r')
@@ -101,8 +162,10 @@ class Model:
     def find_basic_feas_sol(self):
         # Step 1: Achar base inicial viável, ou seja, uma submatriz B de A tal 
         # que a solução do sistema B.XB = b seja >= 0.
-        Bv = np.array([0, 2, 6])
-        Nv = np.array([1, 3, 4, 5])
+        Bv = np.array([0, 2, 3])
+        Nv = np.array([1, 4, 5, 6])
+        # Bv = np.array([4, 5, 6])
+        # Nv = np.array([1, 2, 3, 4])
         B, CB = self.getBNCB(Bv)
         XB = self.compXB(B)
 
@@ -110,18 +173,22 @@ class Model:
     
     def steps2to5(self, B, Bv, Nv, CB, XB):
         # Step 2: Calcular variáveis duais pi resolvendo o sistema piB = CB.
+        print(B.shape, CB.shape)
         pi = np.linalg.solve(B.transpose(), CB)
+        print('pi = ', pi)
 
         # Step 3: Calcular os custos reduzidos das variáveis não básicas xj 
         # (pricing): cj_bar = cj − piAj
         cjbar, jin = u.pricing(Nv, self.A, pi, self.c)
 
-        print("Obj = ", u.obj(CB, XB))
+        print('Obj = ', u.obj(CB, XB))
+        print('cjbar = ', cjbar)
         
         if cjbar < 0.0:
+            print(XB)
             print("OPTIMAL")
-            return 
-
+            return
+        
         Aj = self.A[:,[Nv[jin]]]
     
         # Step 4: Resolva o sistema B.d = A j onde A j é a coluna da variável j 

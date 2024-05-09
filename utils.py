@@ -6,6 +6,8 @@ __max__ = 'maximize'
 __st__ = 'subject to'
 __bounds__ = 'bounds'
 __end__ = 'end'
+__nb_header__= 3
+__nb_footer__ = 3
 
 # ---------------------------------------------------------------------------- #
 # Helper functions:
@@ -54,6 +56,7 @@ def pricing(Nv, A, pi, c):
         cbar = np.append(cbar, c[j] - np.matmul(pi, Aj))
         if cbar[i] > cbar[jmax]:
             jmax = i
+    print(cbar)
     return cbar[jmax], jmax
 
 # def comp_max_t(self, XB, d):

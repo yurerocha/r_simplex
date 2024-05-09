@@ -5,5 +5,8 @@ Subject To
     1x1 + 1x2 + 1x3 + 1x4 <= 117
     4x1 + 3x2 + 3x3 + 4x4 <= 420
 Bounds
-    x1, x2, x3, x4 >= 0
+    x1 >= 0
+    x2 >= 0
+    x3 >= 0
+    x4 >= 0
 End

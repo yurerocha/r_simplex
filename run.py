@@ -1,12 +1,18 @@
 #!/bin/python3
 
 from model import Model
+import sys
+
+if len(sys.argv) < 2:
+    print('Not enough arguments. Expected:\n./run filename')
+    exit()
 
 m = Model()
 
 # m.read('input1.lp')
-m.read2('input1.lp')
+m.read(sys.argv[1])
 
-print(str(m))
+m.to_dual()
+# print(str(m))
 
-# m.solve()
+m.solve()

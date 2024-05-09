@@ -1,13 +1,16 @@
 import numpy as np
+import re
 
 # ---------------------------------------------------------------------------- #
 # Constants:
-__max__ = 'maximize'
+__max__ = 'max'
+__min__ = 'min'
 __st__ = 'subject to'
 __bounds__ = 'bounds'
 __end__ = 'end'
 __nb_header__= 3
 __nb_footer__ = 3
+__inf__ = 10**3
 
 # ---------------------------------------------------------------------------- #
 # Helper functions:
@@ -20,7 +23,7 @@ def get_coef_and_x(cxi:str):
     """Returns coefficient (c) and x variable index (i - 1).
     """
     ci = cxi.split('x')
-    return int(ci[0]), int(ci[1]) - 1
+    return float(ci[0]), int(ci[1]) - 1
 
 def col(V, i):
     """Returns ith column of vector V.
@@ -30,67 +33,87 @@ def col(V, i):
 def comp_max_t(XB, d):
     """Returns max t such that xB − t.d >= 0.
     """
-    # Calcular os valores
     t = np.array([])
-    t_i = np.array([], dtype=int)
+    # t_i = np.array([], dtype=int)
     for i, x in enumerate(XB):
         div = x / d[i][0]
         if div >= 0:
-            t = np.append(t, div)
-            t_i = np.append(t_i, i)
-
+            t = np.append(t, {'i': i, 't': div})
+            # t_i = np.append(t_i, i)
     if len(t) == 0:
         # Unbounded
         return -1
+    # Pegar o valor maior dos que sobraram.
+    v = min(t, key=lambda e: e['t'])
+    return v['i']
 
-    # Pegar o valor maior dos que sobraram
-    v = min(t_i, key=lambda i: t[i])
-    return v
-
-def pricing(Nv, A, pi, c):
+def pricing(Nc, A, pi, c):
     """ Computes reduced costs of non-basic variables xj: cj_bar = cj − piAj """
     cbar = np.array([])
     jmax = 0
-    for i, j in enumerate(Nv):
+    for i, j in enumerate(Nc):
         Aj = np.array(col(A, j))
         cbar = np.append(cbar, c[j] - np.matmul(pi, Aj))
         if cbar[i] > cbar[jmax]:
             jmax = i
-    print(cbar)
     return cbar[jmax], jmax
 
-# def comp_max_t(self, XB, d):
-#     # Calcular os valores
-#     t = np.array([])
-#     for i, x in enumerate(XB):
-#         div = x / d[i][0]
-#         if div >= 0:
-#             t = np.append(t, {'i': i, 't': div})
-    
-#     print('t = ', t)
+def getBNCB(A, c, Bc):
+    """Returns B matrix and CB row vector, based on the selected basic columns 
+    Bc.
+    """
+    B = np.array(col(A, Bc[0]))
+    CB = np.array([c[Bc[0]]])
+    for i in range(1, len(Bc)):
+        B = np.hstack([B, col(A, Bc[i])])
+        CB = np.append(CB, c[Bc[i]])
+    return B, CB
 
-#     # Testar nas outras restrições pra ver quais dão problema e descartá-los
-#     f = np.array([])
-#     for i, v in enumerate(t):
-#         is_ok = True
-#         for j, x in enumerate(XB):
-#             if x-v['t']*d[j][0] < 0:
-#                 is_ok = False
-#                 break
-#         if is_ok:
-#             f = np.append(f, v)
+def compXB(B, b):
+    """Solves B.XB = b >= 0.
+    """
+    return np.linalg.solve(B, b)
 
-#     if len(f) == 0:
-#         print('Unbounded')
+def getNc(n, Bc):
+    """Returns row vector of nonbasic columns Nc.
+    """
+    Nc = np.array([], dtype=int)
+    for i in range(n):
+        if i not in Bc:
+            Nc = np.append(Nc, i)
+    return Nc
 
-#     # Pegar o valor maior dos que sobraram
-#     print('f = ', f)
-#     max_t_i = f[0]['i']
-#     for i in range(1, len(f)):
-#         v = f[i]
-#         if v['t'] > f[max_t_i]['t']:
-#             max_t_i = v['i']
+def print_model(obj, A, C, b, constrs, bounds, var):
+    """Prints the model.
+    """
+    print(obj, end='\n\t')
+    for i, c in enumerate(C):
+        sign = ' + '
+        if i == len(C) - 1:
+            sign = ' '
+        print(str(c) + var + str(i+1) + sign, end='')
+    print('\nsubject to')
+    for i, ai in enumerate(A):
+        print(end='\t')
+        for j, aij in enumerate(ai):
+            sign = ' + '
+            if j == len(ai) - 1:
+                sign = ' '
+            print(str(aij) + var + str(j+1) + sign, end='')
+        print(constrs[i] + ' ' + str(b[i]))
+    print('bounds')
+    for j, bd in enumerate(bounds):
+        print('\t' + var  + str(j+1) + ' ' + bd + ' 0' )
+    print('end')
 
-#     print('max_t_i = ', max_t_i)
-    
-#     return max_t_i
+def change_signs(items):
+    """Changes '>' for '<' and '<' for '>'.
+    """
+    new_items = np.array([])
+    for it in items:
+        if '<' in it:
+            it = re.sub(r'<', '>', it)
+        elif '>' in it:
+            it = re.sub(r'>', '<', it)
+        new_items = np.append(new_items, it)
+    return new_items

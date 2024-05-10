@@ -11,9 +11,19 @@ __end__ = 'end'
 __nb_header__= 3
 __nb_footer__ = 3
 __inf__ = 10**3
+__eps__ = 1e-6
 
 # ---------------------------------------------------------------------------- #
 # Helper functions:
+def iseq(a, b):
+    return abs(a - b) < __eps__
+
+def isl(a, b):
+    return (a - b) < __eps__
+
+def isg(a, b):
+    return (a - b) > __eps__
+
 def obj(CB, XB):
     """Returns the objective value based on the cost coefficients and the x 
     values in the base.
@@ -37,10 +47,11 @@ def comp_max_t(XB, d):
     # t_i = np.array([], dtype=int)
     for i, x in enumerate(XB):
         div = x / d[i][0]
-        if div >= 0:
+        # if div >= 0:
+        if isg(div, 0.0):
             t = np.append(t, {'i': i, 't': div})
             # t_i = np.append(t_i, i)
-    if len(t) == 0:
+    if not t.any():
         # Unbounded
         return -1
     # Pegar o valor maior dos que sobraram.
@@ -117,3 +128,36 @@ def change_signs(items):
             it = re.sub(r'>', '<', it)
         new_items = np.append(new_items, it)
     return new_items
+
+def print_sol(obj, Bc, XB, pi):
+    """Prints primal and dual solutions.
+    """
+    print('Obj = ', obj)
+    for j, x in enumerate(Bc):
+        print('x' + str(x + 1) + ' = ' + str(XB[j]) + ' ')
+    print('Dual')
+    for j in range(len(pi)):
+        print('y' + str(j + 1) + ' = ' + str(pi[j]) + ' ')
+
+def perform_sa(XB, B, Bc, m):
+    """Performs sensitivity analysis on the values of the variables in the
+    optimal solution.
+    """
+    Binv = np.linalg.inv(B)
+    for j in range(m):
+        c = col(Binv, j)
+        mi = np.array([])
+        ma = np.array([])
+        for i in range(m):
+            if not iseq(c[i], 0.0):
+                # print(XB[i], '+ delta *', c[i], '>= 0')
+                v = -XB[i] / c[i][0]
+                if isl(v, 0):
+                    mi = np.append(mi, v)
+                else:
+                    ma = np.append(ma, v)
+        x = 'x' + str(Bc[j]+1)
+        if mi.any():
+            print(x, '>=', max(mi))
+        if ma.any():
+            print(x, '<=', min(ma))

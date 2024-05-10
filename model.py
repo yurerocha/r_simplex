@@ -143,10 +143,11 @@ class Model:
         obj = u.obj(CB, XB)
         if u.__min__ in self.obj:
             obj = -obj
-        print('Obj = ', obj)
+        u.print_sol(obj, Bc, XB, pi)
         # print('cjbar = ', cjbar)
-        if cjbar < 0.0:
+        if u.isl(cjbar, 0.0):
             print("OPTIMAL")
+            u.perform_sa(XB, B, Bc, self.m)
             return
         Aj = self.A[:,[Nc[jin]]]
     

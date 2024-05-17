@@ -156,7 +156,7 @@ def perform_sa(XB, B, Bc, m):
                     mi = np.append(mi, v)
                 else:
                     ma = np.append(ma, v)
-        x = 'x' + str(Bc[j]+1)
+        x = 'b' + str(Bc[j]+1)
         if mi.any():
             print(x, '>=', max(mi))
         if ma.any():

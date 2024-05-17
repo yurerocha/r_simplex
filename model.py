@@ -101,8 +101,11 @@ class Model:
         return Bc
     
     def add_missing_elements_inB(self, Bc):
+        m = 1
+        if self.obj in u.__max__:
+            m = -1
         for i in self.missing:
-            self.c = np.append(self.c, u.__inf__)
+            self.c = np.append(self.c, m * u.__inf__)
             Aj = np.full(shape=(self.m, 1), fill_value=0)
             Aj[i] = 1
             self.A = np.hstack([self.A, Aj])

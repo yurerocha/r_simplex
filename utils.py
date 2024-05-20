@@ -6,12 +6,14 @@ import re
 __max__ = 'max'
 __min__ = 'min'
 __st__ = 'subject to'
-__bounds__ = 'bounds'
+__bounds__ = 'variables'
 __end__ = 'end'
 __nb_header__= 3
 __nb_footer__ = 3
-__inf__ = 10**3
-__eps__ = 1e-6
+__M__ = 10**4
+# __M__ = 10**6
+__eps__ = 1e-7
+# __eps__ = 1e-32
 
 # ---------------------------------------------------------------------------- #
 # Helper functions:
@@ -19,20 +21,21 @@ def iseq(a, b):
     return abs(a - b) < __eps__
 
 def isl(a, b):
-    return (a - b) < __eps__
+    return a < b - __eps__
 
 def isg(a, b):
-    return (a - b) > __eps__
+    return a > b + __eps__
 
 def obj(CB, XB):
     """Returns the objective value based on the cost coefficients and the x 
     values in the base.
     """
     return np.dot(CB.transpose(), XB)
+
 def get_coef_and_x(cxi:str):
     """Returns coefficient (c) and x variable index (i - 1).
     """
-    ci = cxi.split('x')
+    ci = cxi.split('X')
     return float(ci[0]), int(ci[1]) - 1
 
 def col(V, i):
@@ -40,34 +43,41 @@ def col(V, i):
     """
     return V[:, [i]]
 
-def comp_max_t(XB, d):
+def quocient_test(XB, y):
     """Returns max t such that xB − t.d >= 0.
     """
     t = np.array([])
     # t_i = np.array([], dtype=int)
     for i, x in enumerate(XB):
-        div = x / d[i][0]
+        if not isg(y[i][0], 0.0):
+            continue
+
+        div = x / y[i][0]
         # if div >= 0:
-        if isg(div, 0.0):
-            t = np.append(t, {'i': i, 't': div})
-            # t_i = np.append(t_i, i)
+        t = np.append(t, {'i': i, 't': div})
+        # t_i = np.append(t_i, i)
     if not t.any():
+        # print('t =', t)
         # Unbounded
         return -1
-    # Pegar o valor maior dos que sobraram.
+    # Pegar o menor valor dos que sobraram.
     v = min(t, key=lambda e: e['t'])
+    # print('t =', t, v)
     return v['i']
 
 def pricing(Nc, A, pi, c):
     """ Computes reduced costs of non-basic variables xj: cj_bar = cj − piAj """
-    cbar = np.array([])
-    jmax = 0
+    s = np.array([])
     for i, j in enumerate(Nc):
         Aj = np.array(col(A, j))
-        cbar = np.append(cbar, c[j] - np.matmul(pi, Aj))
-        if cbar[i] > cbar[jmax]:
-            jmax = i
-    return cbar[jmax], jmax
+        s = np.append(s, c[j] - np.matmul(pi.transpose(), Aj))
+        # if isg(cbar[i], 0.0):
+        #     return cbar[i], i
+        if isl(s[i], 0.0):
+            # print('s =', s[i], Nc[i], j)
+            return s[i], i
+    return 10, 0
+    # return s[jmin], jmin
 
 def getBNCB(A, c, Bc):
     """Returns B matrix and CB row vector, based on the selected basic columns 
@@ -135,9 +145,9 @@ def print_sol(obj, Bc, XB, pi):
     print('Obj = ', obj)
     for j, x in enumerate(Bc):
         print('x' + str(x + 1) + ' = ' + str(XB[j]) + ' ')
-    print('Dual')
-    for j in range(len(pi)):
-        print('y' + str(j + 1) + ' = ' + str(pi[j]) + ' ')
+    # print('Dual')
+    # for j in range(len(pi)):
+    #     print('y' + str(j + 1) + ' = ' + str(pi[j]) + ' ')
 
 def perform_sa(XB, B, Bc, m):
     """Performs sensitivity analysis on the values of the variables in the

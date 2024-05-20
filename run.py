@@ -12,7 +12,6 @@ m = Model()
 # m.read('input1.lp')
 m.read(sys.argv[1])
 
-m.to_dual()
-# print(str(m))
+# m.to_dual()
 
 m.solve()

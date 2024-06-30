@@ -10,14 +10,16 @@ class Model:
     def __init__(self):
         self.obj = 0
         self.variables = dict()
-        self.c = np.array([], dtype=np.double)
-        self.A = np.array([], dtype=np.double)
-        self.b = np.array([], dtype=np.double)
+        self.c = np.array([], dtype=np.longdouble)
+        self.A = np.array([], dtype=np.longdouble)
+        self.b = np.array([], dtype=np.longdouble)
         self.m = 0 # Number of constraints.
         self.n = 0 # Number of variables.
         self.constrs = np.array([], dtype=str)
         self.bounds = np.array([], dtype=str)
         self.missing = set()
+        self.y_basic = set()
+        self.y = set()
 
     def __str__(self):
         a = f'Model \nobj={self.obj}\nx = [1..{self.n}]\nc = {self.c}\n'
@@ -27,7 +29,12 @@ class Model:
 
     def read(self, filename):
         lp_vars, self.lp = pulp.LpProblem.fromMPS(filename)
+        for k in lp_vars:
+            print(lp_vars[k].getLb(), lp_vars[k].getUb())
         self.obj = self.lp.sense
+
+        self.lp.constraints = u.vars_bounds_as_constrs(lp_vars, self.lp.constraints)
+        self.lp.constraints = u.update_constraints(self.lp.constraints)
 
         self.variables, self.lp.constraints = dt.populate_vars(lp_vars, self.lp.constraints)
         self.m = len(self.lp.constraints)
@@ -54,7 +61,7 @@ class Model:
         # Second, add slack or surplus variables, when required.
         Bc = np.array([], dtype=int)
         missing = set([j for j in range(self.m)]) # Keep track of missing columns in
-                                            # initial base.
+                                                  # initial base.
         # self.m, self.n = self.A.shape
         i = 0
         for k in constrs:
@@ -77,35 +84,133 @@ class Model:
         return Bc
     
     def add_y(self, Bc):
-        m = 1.0
-        if self.obj == pulp.LpMaximize:
-            m = -1.0
         for i in self.missing:
-            self.c = np.append(self.c, m * u.__M__)
+            self.c = np.append(self.c, 0.0)
             Aj = np.full(shape=(self.m, 1), fill_value=0)
             Aj[i] = 1
             self.A = np.hstack([self.A, Aj])
+            # Store artificial variable position in Bc.
+            self.y_basic.add(self.n)
+            self.y.add(self.n)
             Bc = np.append(Bc, self.n)
             self.n += 1
         return Bc
+
+    def rm_y(self):
+        print(self.A)
+        nb_y = len(self.y)
+        for _ in range(nb_y):
+            self.c = self.c[:-1]
+            self.A = np.delete(self.A, -1, axis=1)
+        self.n -= nb_y
+        print(self.A.shape)
+        print(self.A)
+
+    def has_y(self, Bc):
+        for l in Bc:
+            if l in self.y_basic:
+                return True
+        return False
+    
+    def find_init_basic_sol(self, Bc):
+        newc = np.full(shape=len(self.c),fill_value=0.0)
+        # Change the objective function for phase I.
+        for j in self.y:
+            newc[j] = 1.0
+        Nc = u.getNc(self.n, Bc)
+        while True:
+            B, CB = u.getBNCB(self.A, newc, Bc)
+            XB = u.compXB(B, self.b)
+            
+            obj = u.obj(CB, XB)
+            print('Obj =', obj)
+            # print('Bc =', Bc)
+            # print('B =', B)
+            # print('B =', B.shape)
+            # print('XB =', XB)
+            # print('A =', self.A.shape)
+            # print('y =', self.y_basic)
+
+            if u.iseq(obj, 0.0) and not self.has_y(Bc):
+                # Feasible basis for the original problem found.
+                self.rm_y()
+                break
+            
+            for l, v in enumerate(Bc):
+                if v in self.y_basic:
+                    hne, jin = self.examine_lth(B, Nc, l)
+                    if hne:
+                        # Apply change of basis.
+                        print(f'Change of basis in:%d out:%d' %(Nc[jin], Bc[l]))
+                        Bc[l], Nc[jin] = Nc[jin], Bc[l]
+                        # input()
+                        # self.y_basic.remove(v)
+                        break
+                    else:
+                        # Eliminate redundant constraint.
+                        print('Redundant constraint', l)
+                        # newc = np.delete(newc, l)
+                        
+                        # self.A = np.delete(self.A, v, 0)
+                        self.A = np.delete(self.A, l, axis=0)
+                        Bc = np.delete(Bc, l)
+
+                        self.b = np.delete(self.b , l)
+                        self.m -= 1
+                        break
+                        
+            # if not self.y_basic:
+            #     break
+
+        return Bc
+    
+    def examine_lth(self, B, Nc, l):
+        '''Returns True and xj if the lth entry of the jth column is nonzero.
+        '''
+        Binv = np.linalg.inv(B)
+        # Examine lth entry of B⁻¹Aj
+        for pos, j in enumerate(Nc):
+            if not j in self.y_basic:
+                cols = np.matmul(Binv, u.col(self.A, j))
+                if not u.iseq(cols[l], 0.0):
+                    return True, pos
+        return False, -1
+    # def examine_lth(self, B, Nc, l):
+    #     '''Returns True and xj if the lth entry of the jth column is nonzero.
+    #     '''
+    #     Binv = np.linalg.inv(B)
+    #     # Examine lth entry of B⁻¹Aj
+    #     for j in range(self.n):
+    #         cols = np.matmul(Binv, u.col(self.A, j))
+    #         if not u.iseq(cols[l], 0.0):
+    #             return True, pos
+    #     return False, -1
     
     def solve(self):
         # For min problems.
         Bc = self.to_standard()
-        # Not enough columns in the base.
+        # Not enough columns in the basis.
         if len(Bc) != self.m:
             Bc = self.add_y(Bc)
             
         # if self.obj == pulp.LpMinimize:
         #     self.c = [-1 * c for c in self.c]
+        # B, CB = u.getBNCB(self.A, self.c, Bc)
+        # XB = u.compXB(B, self.b)
+        # Nc = u.getNc(self.n, Bc)
+        Bc = self.find_init_basic_sol(Bc)
+        # if not len(Bc):
+        #     print("INFEASIBLE")
+        #     return
+        print('Init basic feasible solution found', Bc)
         B, CB = u.getBNCB(self.A, self.c, Bc)
         XB = u.compXB(B, self.b)
         Nc = u.getNc(self.n, Bc)
         
-        it = 0
+        # it = 0
         while True:
             # print(f'-------------------- It %d --------------------' %(self.it))
-            it += 1
+            # it += 1
 
             Binv = np.linalg.inv(B)
 
@@ -123,8 +228,8 @@ class Model:
             # (pricing): cj_bar = cj − piAj
             sk, jin = u.pricing(Nc, self.A, pi, self.c)
 
-            obj = u.obj(CB, XB)        
-            if u.isg(sk, 0.0) or u.iseq(sk, 0.0):
+            obj = u.obj(CB, XB)
+            if not u.isl(sk, 0.0):
                 # if self.obj == pulp.LpMinimize:
                 #     obj = -obj
                 u.print_sol(obj, Bc, XB, pi)
